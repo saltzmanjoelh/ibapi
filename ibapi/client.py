@@ -118,10 +118,7 @@ from ibapi.server_versions import (
     MIN_SERVER_VER_MANUAL_ORDER_TIME_EXERCISE_OPTIONS,
     MIN_SERVER_VER_CUSTOMER_ACCOUNT,
     MIN_SERVER_VER_PROFESSIONAL_CUSTOMER,
-    MIN_SERVER_VER_RFQ_FIELDS,
-    MIN_SERVER_VER_INCLUDE_OVERNIGHT,
-    MIN_SERVER_VER_UNDO_RFQ_FIELDS,
-    MIN_SERVER_VER_CME_TAGGING_FIELDS
+    MIN_SERVER_VER_RFQ_FIELDS
 )
 
 from ibapi.utils import ClientException, log_
@@ -475,7 +472,7 @@ class EClient(object):
             also used when canceling the market data.
         contract:Contract - This structure contains a description of the
             Contractt for which market data is being requested.
-        genericTickList:str - A comma delimited list of generic tick types.
+        genericTickList:str - A commma delimited list of generic tick types.
             Tick types can be found in the Generic Tick Types page.
             Prefixing w/ 'mdoff' indicates that top mkt data shouldn't tick.
             You can specify the news source by postfixing w/ ':<source>.
@@ -1068,7 +1065,7 @@ class EClient(object):
             Values are: 0 = no, 1 = yes.
         manualOrderTime:str - manual order time
         customerAccount:str - customer account
-        professionalCustomer:bool - professional customer"""
+        professionalCustomer:bool - professinal customer"""
 
         self.logRequest(current_fn_name(), vars())
 
@@ -1598,24 +1595,13 @@ class EClient(object):
             return
 
         if (
-            self.serverVersion() < MIN_SERVER_VER_INCLUDE_OVERNIGHT
-            and order.includeOvernight
+            self.serverVersion() < MIN_SERVER_VER_RFQ_FIELDS
+            and (order.externalUserId or order.manualOrderIndicator != UNSET_INTEGER)
         ):
             self.wrapper.error(
                 orderId,
                 UPDATE_TWS.code(),
-                UPDATE_TWS.msg() + "  It does not support include overnight parameter",
-            )
-            return
-
-        if (
-            self.serverVersion() < MIN_SERVER_VER_CME_TAGGING_FIELDS 
-            and order.manualOrderIndicator != UNSET_INTEGER
-        ):
-            self.wrapper.error(
-                NO_VALID_ID,
-                UPDATE_TWS.code(),
-                UPDATE_TWS.msg() + " It does not support manual order indicator parameters",
+                UPDATE_TWS.msg() + "  It does not support external user id and manual order indicator parameters",
             )
             return
 
@@ -2050,14 +2036,8 @@ class EClient(object):
             if self.serverVersion() >= MIN_SERVER_VER_PROFESSIONAL_CUSTOMER:
                 flds.append(make_field(order.professionalCustomer))
 
-            if self.serverVersion() >= MIN_SERVER_VER_RFQ_FIELDS and self.serverVersion() < MIN_SERVER_VER_UNDO_RFQ_FIELDS:
-                flds.append(make_field(""))
-                flds.append(make_field(UNSET_INTEGER))
-
-            if self.serverVersion() >= MIN_SERVER_VER_INCLUDE_OVERNIGHT:
-                flds.append(make_field(order.includeOvernight))
-
-            if self.serverVersion() >= MIN_SERVER_VER_CME_TAGGING_FIELDS:
+            if self.serverVersion() >= MIN_SERVER_VER_RFQ_FIELDS:
+                flds.append(make_field(order.externalUserId))
                 flds.append(make_field(order.manualOrderIndicator))
 
             msg = "".join(flds)
@@ -2092,13 +2072,14 @@ class EClient(object):
             )
             return
 
-        if self.serverVersion() < MIN_SERVER_VER_CME_TAGGING_FIELDS and (
-            orderCancel.extOperator != "" or orderCancel.manualOrderIndicator != UNSET_INTEGER
+        if (
+            self.serverVersion() < MIN_SERVER_VER_RFQ_FIELDS
+            and (orderCancel.extOperator or orderCancel.externalUserId or orderCancel.manualOrderIndicator != UNSET_INTEGER) 
         ):
             self.wrapper.error(
                 orderId,
                 UPDATE_TWS.code(),
-                UPDATE_TWS.msg() + " It does not support ext operator and manual order indicator parameters",
+                UPDATE_TWS.msg() + "  It does not support ext operator, external user id and manual order indicator parameters",
             )
             return
 
@@ -2107,20 +2088,15 @@ class EClient(object):
 
             flds = []
             flds += [make_field(OUT.CANCEL_ORDER)]
-            if self.serverVersion() < MIN_SERVER_VER_CME_TAGGING_FIELDS:
-                flds += [make_field(VERSION)]
+            flds += [make_field(VERSION)]
             flds += [make_field(orderId)]
 
             if self.serverVersion() >= MIN_SERVER_VER_MANUAL_ORDER_TIME:
                 flds += [make_field(orderCancel.manualOrderCancelTime)]
 
-            if self.serverVersion() >= MIN_SERVER_VER_RFQ_FIELDS and self.serverVersion() < MIN_SERVER_VER_UNDO_RFQ_FIELDS:
-                flds += [make_field("")]
-                flds += [make_field("")]
-                flds += [make_field(UNSET_INTEGER)]
-
-            if self.serverVersion() >= MIN_SERVER_VER_CME_TAGGING_FIELDS:
+            if self.serverVersion() >= MIN_SERVER_VER_RFQ_FIELDS:
                 flds += [make_field(orderCancel.extOperator)]
+                flds += [make_field(orderCancel.externalUserId)]
                 flds += [make_field(orderCancel.manualOrderIndicator)]
 
             msg = "".join(flds)
@@ -2201,7 +2177,7 @@ class EClient(object):
 
         self.sendMsg(msg)
 
-    def reqGlobalCancel(self, orderCancel: OrderCancel):
+    def reqGlobalCancel(self):
         """Use this function to cancel all open orders globally. It
         cancels both API and TWS open orders.
 
@@ -2214,33 +2190,9 @@ class EClient(object):
             self.wrapper.error(NO_VALID_ID, NOT_CONNECTED.code(), NOT_CONNECTED.msg())
             return
 
-        if self.serverVersion() < MIN_SERVER_VER_CME_TAGGING_FIELDS and (
-            orderCancel.extOperator != "" or orderCancel.manualOrderIndicator != UNSET_INTEGER
-        ):
-            self.wrapper.error(
-                NO_VALID_ID,
-                UPDATE_TWS.code(),
-                UPDATE_TWS.msg() + " It does not support ext operator and manual order indicator parameters",
-            )
-            return
+        VERSION = 1
 
-        try:
-            VERSION = 1
-
-            flds = []
-            flds += [make_field(OUT.REQ_GLOBAL_CANCEL)]
-            if self.serverVersion() < MIN_SERVER_VER_CME_TAGGING_FIELDS:
-                flds += [make_field(VERSION)]
-
-            if self.serverVersion() >= MIN_SERVER_VER_CME_TAGGING_FIELDS:
-                flds += [make_field(orderCancel.extOperator)]
-                flds += [make_field(orderCancel.manualOrderIndicator)]
-
-            msg = "".join(flds)
-
-        except ClientException as ex:
-            self.wrapper.error(NO_VALID_ID, ex.code, ex.msg + ex.text)
-            return
+        msg = make_field(OUT.REQ_GLOBAL_CANCEL) + make_field(VERSION)
 
         self.sendMsg(msg)
 

@@ -1,5 +1,5 @@
 """
-Copyright (C) 2024 Interactive Brokers LLC. All rights reserved. This code is subject to the terms
+Copyright (C) 2023 Interactive Brokers LLC. All rights reserved. This code is subject to the terms
  and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable.
 
 This is the interface that will need to be overloaded by the customer so
@@ -455,7 +455,7 @@ class EWrapper:
 
     def currentTime(self, time: int):
         """Server's current time. This method will receive IB server's system
-        time resulting after the invocation of reqCurrentTime."""
+        time resulting after the invokation of reqCurrentTime."""
 
         logAnswer(current_fn_name(), vars())
 
@@ -805,7 +805,7 @@ class EWrapper:
         """returns tick-by-tick data for tickType = "MidPoint" """
         logAnswer(current_fn_name(), vars())
 
-    def orderBound(self, permId: int, clientId: int, orderId: int):
+    def orderBound(self, reqId: int, apiClientId: int, apiOrderId: int):
         """returns orderBound notification"""
         logAnswer(current_fn_name(), vars())
 

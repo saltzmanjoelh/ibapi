@@ -1,5 +1,5 @@
 """
-Copyright (C) 2024 Interactive Brokers LLC. All rights reserved. This code is subject to the terms
+Copyright (C) 2023 Interactive Brokers LLC. All rights reserved. This code is subject to the terms
  and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable.
 """
 
@@ -9,7 +9,6 @@ from ibapi.const import UNSET_DECIMAL
 from ibapi.utils import decimalMaxString
 from ibapi.utils import intMaxString
 from ibapi.utils import floatMaxString
-from ibapi.utils import longMaxString
 
 
 class Execution(Object):
@@ -47,7 +46,7 @@ class Execution(Object):
                 self.side,
                 decimalMaxString(self.shares),
                 floatMaxString(self.price),
-                longMaxString(self.permId),
+                intMaxString(self.permId),
                 intMaxString(self.clientId),
                 intMaxString(self.orderId),
                 intMaxString(self.liquidation),

@@ -31,7 +31,6 @@
     <Compile Include="enum_implem.py" />
     <Compile Include="errors.py" />
     <Compile Include="execution.py" />
-    <Compile Include="ineligibility_reason.py" />
     <Compile Include="message.py" />
     <Compile Include="news.py" />
     <Compile Include="object_implem.py" />

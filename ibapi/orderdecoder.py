@@ -28,9 +28,7 @@ from ibapi.server_versions import (
     MIN_SERVER_VER_PEGBEST_PEGMID_OFFSETS,
     MIN_SERVER_VER_CUSTOMER_ACCOUNT,
     MIN_SERVER_VER_PROFESSIONAL_CUSTOMER,
-    MIN_SERVER_VER_BOND_ACCRUED_INTEREST,
-    MIN_SERVER_VER_INCLUDE_OVERNIGHT,
-    MIN_SERVER_VER_CME_TAGGING_FIELDS_IN_OPEN_ORDER
+    MIN_SERVER_VER_BOND_ACCRUED_INTEREST
 )
 from ibapi.tag_value import TagValue
 from ibapi.utils import decode, SHOW_UNSET, isPegBenchOrder
@@ -491,12 +489,3 @@ class OrderDecoder(Object):
     def decodeBondAccruedInterest(self, fields):
         if self.serverVersion >= MIN_SERVER_VER_BOND_ACCRUED_INTEREST:
             self.order.bondAccruedInterest = decode(str, fields)
-
-    def decodeIncludeOvernight(self, fields):
-        if self.serverVersion >= MIN_SERVER_VER_INCLUDE_OVERNIGHT:
-            self.order.includeOvernight = decode(bool, fields)
-
-    def decodeCMETaggingFields(self, fields):
-        if self.serverVersion >= MIN_SERVER_VER_CME_TAGGING_FIELDS_IN_OPEN_ORDER:
-            self.order.extOperator = decode(str, fields)
-            self.order.manualOrderIndicator = decode(int, fields, SHOW_UNSET)

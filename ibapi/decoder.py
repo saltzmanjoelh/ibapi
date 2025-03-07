@@ -231,8 +231,6 @@ class Decoder(Object):
         OrderDecoder.decodeCustomerAccount(self, fields)
         OrderDecoder.decodeProfessionalCustomer(self, fields)
         OrderDecoder.decodeBondAccruedInterest(self, fields)
-        OrderDecoder.decodeIncludeOvernight(self, fields)
-        OrderDecoder.decodeCMETaggingFields(self, fields)
 
         self.wrapper.openOrder(order.orderId, contract, order, orderState)
 
@@ -450,10 +448,6 @@ class Decoder(Object):
         contract.notes = decode(str, fields)  # ver 2 field
         if version >= 4:
             contract.longName = decode(str, fields)
-        if self.serverVersion >= MIN_SERVER_VER_BOND_TRADING_HOURS:
-            contract.timeZoneId = decode(str, fields)
-            contract.tradingHours = decode(str, fields)
-            contract.liquidHours = decode(str, fields)
         if version >= 6:
             contract.evRule = decode(str, fields)
             contract.evMultiplier = decode(int, fields)
@@ -1205,11 +1199,11 @@ class Decoder(Object):
 
     def processOrderBoundMsg(self, fields):
         next(fields)
-        permId = decode(int, fields)
-        clientId = decode(int, fields)
-        orderId = decode(int, fields)
+        reqId = decode(int, fields)
+        apiClientId = decode(int, fields)
+        apiOrderId = decode(int, fields)
 
-        self.wrapper.orderBound(permId, clientId, orderId)
+        self.wrapper.orderBound(reqId, apiClientId, apiOrderId)
 
     def processMarketDepthMsg(self, fields):
         next(fields)
@@ -1399,21 +1393,21 @@ class Decoder(Object):
         lastTradeDateOrContractMonth = decode(str, fields)
         if lastTradeDateOrContractMonth is not None:
             if "-" in lastTradeDateOrContractMonth:
-                split = lastTradeDateOrContractMonth.split("-")
+                splitted = lastTradeDateOrContractMonth.split("-")
             else:
-                split = lastTradeDateOrContractMonth.split()
+                splitted = lastTradeDateOrContractMonth.split()
 
-            if len(split) > 0:
+            if len(splitted) > 0:
                 if isBond:
-                    contract.maturity = split[0]
+                    contract.maturity = splitted[0]
                 else:
-                    contract.contract.lastTradeDateOrContractMonth = split[0]
+                    contract.contract.lastTradeDateOrContractMonth = splitted[0]
 
-            if len(split) > 1:
-                contract.lastTradeTime = split[1]
+            if len(splitted) > 1:
+                contract.lastTradeTime = splitted[1]
 
-            if isBond and len(split) > 2:
-                contract.timeZoneId = split[2]
+            if isBond and len(splitted) > 2:
+                contract.timeZoneId = splitted[2]
 
     ######################################################################
 
