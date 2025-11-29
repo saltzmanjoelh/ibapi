@@ -36,6 +36,18 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
+      - name: Setup stable branch
+        run: |
+          # Create stable branch if it doesn't exist, or checkout if it does
+          if git ls-remote --heads origin stable | grep -q stable; then
+            git checkout stable || git checkout -b stable
+            git pull origin stable || true
+          else
+            # Branch doesn't exist, create it from current branch
+            git checkout -b stable
+            git push -u origin stable || true
+          fi
+
       - name: Check for Stable updates
         id: check_stable
         run: |
@@ -44,13 +56,10 @@ jobs:
       - name: Update Stable version if needed
         if: steps.check_stable.outputs.has_update == 'true'
         run: |
-          # Pull latest changes in case latest job updated first
-          git pull --rebase || true
           python .github/scripts/check_version.py stable --update
           git add .
           git commit -m "Update to IB API Stable ${{ steps.check_stable.outputs.new_version }}"
-          git pull --rebase || true
-          git push
+          git push origin stable
 
       - name: Create Stable release
         if: steps.check_stable.outputs.has_update == 'true'
@@ -58,6 +67,7 @@ jobs:
         with:
           tag_name: stable-${{ steps.check_stable.outputs.new_version }}
           name: Stable ${{ steps.check_stable.outputs.new_version }}
+          target_commitish: stable
           body: |
             Automated update to IB API Stable version ${{ steps.check_stable.outputs.new_version }}
             
@@ -98,6 +108,18 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
+      - name: Setup latest branch
+        run: |
+          # Create latest branch if it doesn't exist, or checkout if it does
+          if git ls-remote --heads origin latest | grep -q latest; then
+            git checkout latest || git checkout -b latest
+            git pull origin latest || true
+          else
+            # Branch doesn't exist, create it from current branch
+            git checkout -b latest
+            git push -u origin latest || true
+          fi
+
       - name: Check for Latest updates
         id: check_latest
         run: |
@@ -106,13 +128,10 @@ jobs:
       - name: Update Latest version if needed
         if: steps.check_latest.outputs.has_update == 'true'
         run: |
-          # Pull latest changes in case stable job updated first
-          git pull --rebase || true
           python .github/scripts/check_version.py latest --update
           git add .
           git commit -m "Update to IB API Latest ${{ steps.check_latest.outputs.new_version }}"
-          git pull --rebase || true
-          git push
+          git push origin latest
 
       - name: Create Latest release
         if: steps.check_latest.outputs.has_update == 'true'
@@ -120,6 +139,7 @@ jobs:
         with:
           tag_name: latest-${{ steps.check_latest.outputs.new_version }}
           name: Latest ${{ steps.check_latest.outputs.new_version }}
+          target_commitish: latest
           body: |
             Automated update to IB API Latest version ${{ steps.check_latest.outputs.new_version }}
             
