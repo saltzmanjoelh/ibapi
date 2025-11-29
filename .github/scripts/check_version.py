@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to download and update Interactive Brokers API files.
-Downloads stable or latest version and replaces current ibapi directory contents.
+Script to check if a new version of IB API is available and optionally update.
+Used by GitHub Actions workflow to check for updates and perform updates.
 """
 
 import argparse
@@ -24,19 +24,18 @@ except ImportError:
     sys.exit(1)
 
 
-def find_download_url_and_version(version):
+def find_download_url_and_version(version_type):
     """
     Parse the Interactive Brokers download page to find the Mac/Unix download URL and version number.
     
     Args:
-        version: 'stable' or 'latest'
+        version_type: 'stable' or 'latest'
     
     Returns:
         tuple: (download_url, version_number) where version_number is like "10.37" or "10.41"
     """
     url = "https://interactivebrokers.github.io/#"
     
-    print(f"Fetching download page...")
     try:
         response = requests.get(url, timeout=30)
         response.raise_for_status()
@@ -45,10 +44,6 @@ def find_download_url_and_version(version):
         sys.exit(1)
     
     soup = BeautifulSoup(response.content, 'html.parser')
-    
-    # Find the table row that contains the version we want
-    # The table has rows for "TWS API Stable" and "TWS API Latest"
-    target_text = f"TWS API {version.capitalize()}"
     
     # Find all links in the page
     links = soup.find_all('a', href=True)
@@ -61,18 +56,17 @@ def find_download_url_and_version(version):
         href = link.get('href', '')
         if 'twsapi_macunix' in href and '.zip' in href:
             # Check if this is the right version by looking at parent context
-            # Stable links are in one row, Latest in another
             parent_row = link.find_parent('tr')
             if parent_row:
                 row_text = parent_row.get_text()
-                if version == 'stable' and 'TWS API Stable' in row_text:
+                if version_type == 'stable' and 'TWS API Stable' in row_text:
                     download_url = href
                     # Extract version number from the row text (e.g., "API 10.37")
                     version_match = re.search(r'API\s+(\d+\.\d+)', row_text)
                     if version_match:
                         version_number = version_match.group(1)
                     break
-                elif version == 'latest' and 'TWS API Latest' in row_text:
+                elif version_type == 'latest' and 'TWS API Latest' in row_text:
                     download_url = href
                     # Extract version number from the row text (e.g., "API 10.41")
                     version_match = re.search(r'API\s+(\d+\.\d+)', row_text)
@@ -81,11 +75,10 @@ def find_download_url_and_version(version):
                     break
     
     if not download_url:
-        print(f"Error: Could not find {version} Mac/Unix download URL")
+        print(f"Error: Could not find {version_type} Mac/Unix download URL")
         sys.exit(1)
     
     if not version_number:
-        print(f"Warning: Could not extract version number from download page")
         # Try to extract from filename as fallback
         filename_match = re.search(r'twsapi_macunix\.(\d+)\.(\d+)', download_url)
         if filename_match:
@@ -257,38 +250,67 @@ def copy_files(source_dir, dest_dir):
     return final_version or source_version
 
 
-def read_version_file(project_root):
+def get_current_version(project_root, version_type):
     """
-    Read version information from .ibapi_version file.
+    Get the current version from version tracking files.
     
     Args:
         project_root: Path to project root
+        version_type: 'stable' or 'latest'
     
     Returns:
-        dict: Version info with 'type' (stable/latest) and 'version' (version number), or None
+        str: Current version number or None
     """
-    version_file = project_root / ".ibapi_version"
-    if not version_file.exists():
-        return None
+    # Check for type-specific version file
+    version_file = project_root / f".ibapi_{version_type}_version"
+    if version_file.exists():
+        try:
+            with open(version_file, 'r') as f:
+                data = json.load(f)
+                return data.get('version')
+        except Exception:
+            pass
     
-    try:
-        with open(version_file, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Warning: Could not read version file: {e}")
-        return None
+    # Check main version file if it matches the type
+    main_version_file = project_root / ".ibapi_version"
+    if main_version_file.exists():
+        try:
+            with open(main_version_file, 'r') as f:
+                data = json.load(f)
+                if data.get('type') == version_type:
+                    return data.get('version')
+        except Exception:
+            pass
+    
+    # Try to get version from ibapi/__init__.py as fallback
+    init_file = project_root / "ibapi" / "__init__.py"
+    if init_file.exists():
+        try:
+            with open(init_file, 'r') as f:
+                content = f.read()
+                version_match = re.search(
+                    r'VERSION\s*=\s*\{\s*"major":\s*(\d+),\s*"minor":\s*(\d+),\s*"micro":\s*(\d+)\s*\}',
+                    content
+                )
+                if version_match:
+                    return f"{version_match.group(1)}.{version_match.group(2)}.{version_match.group(3)}"
+        except Exception:
+            pass
+    
+    return None
 
 
 def write_version_file(project_root, version_type, version_number):
     """
-    Write version information to .ibapi_version file.
+    Write version information to version tracking files.
     
     Args:
         project_root: Path to project root
         version_type: 'stable' or 'latest'
         version_number: Version number string
     """
-    version_file = project_root / ".ibapi_version"
+    # Write to type-specific file
+    version_file = project_root / f".ibapi_{version_type}_version"
     version_info = {
         'type': version_type,
         'version': version_number
@@ -301,58 +323,61 @@ def write_version_file(project_root, version_type, version_number):
         print(f"Warning: Could not write version file: {e}")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Download and update Interactive Brokers API files"
-    )
-    parser.add_argument(
-        'version',
-        choices=['stable', 'latest'],
-        help="Version to download: 'stable' or 'latest'"
-    )
+def normalize_version(version):
+    """
+    Normalize version string to compare properly.
+    Adds .0 if only major.minor is provided.
     
-    args = parser.parse_args()
+    Args:
+        version: Version string (e.g., "10.37" or "10.37.2")
     
-    # Get project root directory (where this script is located)
-    project_root = Path(__file__).parent.absolute()
+    Returns:
+        str: Normalized version string
+    """
+    if not version:
+        return None
     
-    # Check current version if it exists
-    current_version_info = read_version_file(project_root)
-    if current_version_info:
-        print("="*60)
-        print(f"Current installation:")
-        print(f"  Type: {current_version_info.get('type', 'unknown')}")
-        print(f"  Version: {current_version_info.get('version', 'unknown')}")
-        print("="*60)
-        print()
+    parts = version.split('.')
+    if len(parts) == 2:
+        return f"{version}.0"
+    return version
+
+
+def perform_update(project_root, version_type, download_url, page_version):
+    """
+    Download and install the IB API files.
     
+    Args:
+        project_root: Path to project root
+        version_type: 'stable' or 'latest'
+        download_url: URL to download ZIP from
+        page_version: Version number from download page
+    
+    Returns:
+        str: Installed version number
+    """
     # Create temporary directory for downloads
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         
-        # Step 1: Find download URL and version number
-        download_url, page_version = find_download_url_and_version(args.version)
-        
         print("\n" + "="*60)
-        print(f"Downloading {args.version.upper()} version:")
+        print(f"Downloading {version_type.upper()} version:")
         print(f"  API Version: {page_version}")
         print(f"  URL: {download_url}")
         print("="*60)
         print()
         
-        # Step 2: Download ZIP file
+        # Download ZIP file
         zip_filename = os.path.basename(urlparse(download_url).path)
         zip_path = temp_path / zip_filename
         download_file(download_url, zip_path)
         
-        # Step 3: Extract ZIP file
+        # Extract ZIP file
         extract_dir = temp_path / "extracted"
         extract_dir.mkdir()
         extract_zip(zip_path, extract_dir)
         
-        # Step 4: Find pythonclient directory
-        # The ZIP extracts directly to: extracted/IBJts/source/pythonclient/
-        # or sometimes: extracted/twsapi_macunix.XXXX.XX/IBJts/source/pythonclient/
+        # Find pythonclient directory
         extracted_contents = list(extract_dir.iterdir())
         if not extracted_contents:
             print("Error: ZIP file appears to be empty")
@@ -376,40 +401,107 @@ def main():
         if not ibjts_dir:
             print("Error: Could not find IBJts/source/pythonclient directory in extracted files")
             print(f"Extracted contents: {[str(p) for p in extracted_contents]}")
-            # Try to help debug
-            ibjts_path = extract_dir / "IBJts"
-            if ibjts_path.exists():
-                print(f"Found IBJts at: {ibjts_path}")
-                source_path = ibjts_path / "source"
-                if source_path.exists():
-                    print(f"Found source at: {source_path}")
-                    pythonclient_path = source_path / "pythonclient"
-                    if pythonclient_path.exists():
-                        print(f"Found pythonclient at: {pythonclient_path}")
-                    else:
-                        print(f"pythonclient not found. Contents of source: {list(source_path.iterdir())}")
             sys.exit(1)
         
-        # Step 5: Copy files to project root
+        # Copy files to project root
         installed_version = copy_files(ibjts_dir, project_root)
         
-        # Step 6: Save version information
+        # Save version information
         if installed_version:
-            write_version_file(project_root, args.version, installed_version)
+            write_version_file(project_root, version_type, installed_version)
             print(f"\nInstalled version: {installed_version}")
+            return installed_version
         elif page_version:
-            write_version_file(project_root, args.version, page_version)
+            write_version_file(project_root, version_type, page_version)
             print(f"\nInstalled version (from download page): {page_version}")
+            return page_version
         
+        return None
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Check if a new version of IB API is available and optionally update"
+    )
+    parser.add_argument(
+        'version_type',
+        choices=['stable', 'latest'],
+        help="Version type to check: 'stable' or 'latest'"
+    )
+    parser.add_argument(
+        '--update',
+        action='store_true',
+        help="Perform the update if a new version is available"
+    )
+    
+    args = parser.parse_args()
+    
+    project_root = Path(__file__).parent.parent.parent.absolute()
+    
+    # Get current version
+    current_version = get_current_version(project_root, args.version_type)
+    current_version_normalized = normalize_version(current_version) if current_version else None
+    
+    # Get available version and download URL from download page
+    download_url, available_version = find_download_url_and_version(args.version_type)
+    available_version_normalized = normalize_version(available_version) if available_version else None
+    
+    # Compare versions
+    has_update = False
+    if available_version_normalized and current_version_normalized:
+        # Parse versions to compare properly
+        current_parts = [int(x) for x in current_version_normalized.split('.')]
+        available_parts = [int(x) for x in available_version_normalized.split('.')]
+        
+        # Compare version parts
+        for i in range(max(len(current_parts), len(available_parts))):
+            current_part = current_parts[i] if i < len(current_parts) else 0
+            available_part = available_parts[i] if i < len(available_parts) else 0
+            
+            if available_part > current_part:
+                has_update = True
+                break
+            elif available_part < current_part:
+                break
+    elif available_version_normalized and not current_version_normalized:
+        # No current version tracked, consider it an update
+        has_update = True
+    
+    # Perform update if requested and needed
+    if args.update and has_update:
+        installed_version = perform_update(project_root, args.version_type, download_url, available_version)
+        if installed_version:
+            available_version = installed_version
+    
+    # Output for GitHub Actions (using GITHUB_OUTPUT file)
+    output_file = os.environ.get('GITHUB_OUTPUT')
+    if output_file:
+        with open(output_file, 'a') as f:
+            f.write(f"current_version={current_version or 'unknown'}\n")
+            f.write(f"new_version={available_version or 'unknown'}\n")
+            f.write(f"has_update={str(has_update).lower()}\n")
+    else:
+        # Fallback for local testing
+        print(f"current_version={current_version or 'unknown'}")
+        print(f"new_version={available_version or 'unknown'}")
+        print(f"has_update={str(has_update).lower()}")
+    
+    # Also print for debugging
+    print(f"Current {args.version_type} version: {current_version or 'unknown'}")
+    print(f"Available {args.version_type} version: {available_version or 'unknown'}")
+    print(f"Update needed: {has_update}")
+    
+    if args.update and has_update:
         print("\n" + "="*60)
         print("Update complete!")
         print(f"IB API files have been updated in: {project_root}")
-        print(f"Version type: {args.version}")
-        if installed_version:
-            print(f"Version number: {installed_version}")
+        print(f"Version type: {args.version_type}")
+        if available_version:
+            print(f"Version number: {available_version}")
         print("="*60)
+    
+    sys.exit(0 if has_update else 1)
 
 
 if __name__ == '__main__':
     main()
-

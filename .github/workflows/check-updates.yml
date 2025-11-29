@@ -1,0 +1,136 @@
+name: Check for IB API Updates
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write # Required to push changes and create releases
+  pull-requests: read # Optional, for future PR creation if needed
+
+jobs:
+  check-stable:
+    runs-on: ubuntu-latest
+    name: Check and Update Stable
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 # Fetch all history for tags
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Check for Stable updates
+        id: check_stable
+        run: |
+          python .github/scripts/check_version.py stable
+
+      - name: Update Stable version if needed
+        if: steps.check_stable.outputs.has_update == 'true'
+        run: |
+          # Pull latest changes in case latest job updated first
+          git pull --rebase || true
+          python .github/scripts/check_version.py stable --update
+          git add .
+          git commit -m "Update to IB API Stable ${{ steps.check_stable.outputs.new_version }}"
+          git pull --rebase || true
+          git push
+
+      - name: Create Stable release
+        if: steps.check_stable.outputs.has_update == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: stable-${{ steps.check_stable.outputs.new_version }}
+          name: Stable ${{ steps.check_stable.outputs.new_version }}
+          body: |
+            Automated update to IB API Stable version ${{ steps.check_stable.outputs.new_version }}
+            
+            Previous version: ${{ steps.check_stable.outputs.current_version }}
+            New version: ${{ steps.check_stable.outputs.new_version }}
+          draft: false
+          prerelease: false
+
+      - name: Summary
+        run: |
+          echo "## Stable Update Check" >> $GITHUB_STEP_SUMMARY
+          echo "- Current: ${{ steps.check_stable.outputs.current_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Available: ${{ steps.check_stable.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Update needed: ${{ steps.check_stable.outputs.has_update }}" >> $GITHUB_STEP_SUMMARY
+
+  check-latest:
+    runs-on: ubuntu-latest
+    name: Check and Update Latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 # Fetch all history for tags
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Check for Latest updates
+        id: check_latest
+        run: |
+          python .github/scripts/check_version.py latest
+
+      - name: Update Latest version if needed
+        if: steps.check_latest.outputs.has_update == 'true'
+        run: |
+          # Pull latest changes in case stable job updated first
+          git pull --rebase || true
+          python .github/scripts/check_version.py latest --update
+          git add .
+          git commit -m "Update to IB API Latest ${{ steps.check_latest.outputs.new_version }}"
+          git pull --rebase || true
+          git push
+
+      - name: Create Latest release
+        if: steps.check_latest.outputs.has_update == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest-${{ steps.check_latest.outputs.new_version }}
+          name: Latest ${{ steps.check_latest.outputs.new_version }}
+          body: |
+            Automated update to IB API Latest version ${{ steps.check_latest.outputs.new_version }}
+            
+            Previous version: ${{ steps.check_latest.outputs.current_version }}
+            New version: ${{ steps.check_latest.outputs.new_version }}
+          draft: false
+          prerelease: false
+
+      - name: Summary
+        run: |
+          echo "## Latest Update Check" >> $GITHUB_STEP_SUMMARY
+          echo "- Current: ${{ steps.check_latest.outputs.current_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Available: ${{ steps.check_latest.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Update needed: ${{ steps.check_latest.outputs.has_update }}" >> $GITHUB_STEP_SUMMARY
