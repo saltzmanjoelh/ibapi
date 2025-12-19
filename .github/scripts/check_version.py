@@ -500,7 +500,10 @@ def main():
             print(f"Version number: {available_version}")
         print("="*60)
     
-    sys.exit(0 if has_update else 1)
+    # GitHub Actions should not fail when there is simply nothing to update.
+    # The workflow can rely on the `has_update` output to decide whether to run
+    # update/release steps. We still exit non-zero earlier for real errors.
+    sys.exit(0)
 
 
 if __name__ == '__main__':
